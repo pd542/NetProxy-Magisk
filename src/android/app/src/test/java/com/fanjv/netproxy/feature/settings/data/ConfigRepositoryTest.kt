@@ -7,17 +7,24 @@ import com.fanjv.netproxy.feature.settings.model.WifiPolicySettings
 import com.fanjv.netproxy.feature.settings.presentation.SettingsViewModel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -25,6 +32,12 @@ import java.io.File
 
 class ConfigRepositoryTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
+
+    // ConfigurationWrites 默认挂在 Dispatchers.Main 上，JVM 单测没有真实主线程，
+    // 需提供可用的主调度器，否则串行写入永远不会被调度。
+    @Before fun installMainDispatcher() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+
+    @After fun restoreMainDispatcher() { Dispatchers.resetMain() }
 
     private val defaultWifi = """{"wifi":{"enabled":false,"mode":"blacklist","blacklist":[],"whitelist":[],"proxy_on_non_wifi":true}}"""
 

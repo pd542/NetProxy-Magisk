@@ -9,12 +9,16 @@ import com.fanjv.netproxy.feature.settings.model.ModuleWifiConfig
 import com.fanjv.netproxy.feature.settings.model.WifiPolicySettings
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -22,7 +26,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -31,6 +37,11 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 class SettingsViewModelTest {
     @get:Rule val folder = TemporaryFolder()
+
+    // ConfigurationWrites 默认挂在 Dispatchers.Main 上，JVM 单测需提供可用主调度器。
+    @Before fun installMainDispatcher() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+
+    @After fun restoreMainDispatcher() { Dispatchers.resetMain() }
 
     private inner class Network {
         var wifi = WifiPolicySettings()
