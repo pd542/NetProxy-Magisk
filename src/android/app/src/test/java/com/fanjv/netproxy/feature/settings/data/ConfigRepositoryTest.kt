@@ -30,6 +30,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ConfigRepositoryTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
@@ -40,6 +41,9 @@ class ConfigRepositoryTest {
     @After fun restoreMainDispatcher() { Dispatchers.resetMain() }
 
     private val defaultWifi = """{"wifi":{"enabled":false,"mode":"blacklist","blacklist":[],"whitelist":[],"proxy_on_non_wifi":true}}"""
+    // 模块回读内容带链路开关；写回时必须原样透传，不能重置为默认值。
+    private val defaultWifiWithPolicy = """{"wifi":{"enabled":false,"mode":"blacklist","blacklist":[],"whitelist":[],"proxy_on_non_wifi":true},"proxy":{"enabled":false},"carrier":{"enabled":false}}"""
+    private val expectedWifiWrite = defaultWifiWithPolicy
 
     private fun output(data: String) = ModuleHttpResponse(200, """{"schema":1,"ok":true,"code":"test","message":"","data":$data}""")
 
@@ -88,15 +92,22 @@ class ConfigRepositoryTest {
     @Test fun modulePartitionWritesContainOnlyOwnedFieldsIncludingDefaults() = runBlocking {
         val writes = ConfigurationWrites(this)
         val client = ModuleApiClient(transport = TestApiTransport { args ->
-            assertEquals("PUT", args.method)
-            assertEquals("/config", args.path)
             val target = args.target
             assertTrue(target in setOf("module/wifi", "module/auto_start"))
-            assertEquals(if (target == "module/wifi") "wifi-read" else "auto-read", args.text("revision"))
-            assertEquals(Json.parseToJsonElement(if (target == "module/wifi") defaultWifi else """{"auto_start":false}"""),
-                Json.parseToJsonElement(args.text("content")))
-            assertEquals(setOf("content", "revision"), args.body.keys)
-            output("""{"revision":"$target-saved"}""")
+            if (args.method == "GET") {
+                // applyWifi 提交前会回读当前 module/wifi，用于透传 proxy/carrier。
+                args.assertConfig("GET", "module/wifi")
+                snapshot(defaultWifiWithPolicy, "wifi-read")
+            } else {
+                assertEquals("PUT", args.method)
+                assertEquals("/config", args.path)
+                assertEquals(if (target == "module/wifi") "wifi-read" else "auto-read", args.text("revision"))
+                assertEquals(
+                    Json.parseToJsonElement(if (target == "module/wifi") expectedWifiWrite else """{"auto_start":false}"""),
+                    Json.parseToJsonElement(args.text("content")))
+                assertEquals(setOf("content", "revision"), args.body.keys)
+                output("""{"revision":"$target-saved"}""")
+            }
         })
         val repository = ConfigRepository(client, writes::await)
         withTimeout(5_000) {
@@ -197,17 +208,28 @@ class ConfigRepositoryTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         var content = defaultWifi
+        // 模块回读内容需带 proxy/carrier，写回时原样透传。
+        var contentWithPolicy = defaultWifiWithPolicy
         var revision = 0
         var reads = 0
         val client = ModuleApiClient(transport = TestApiTransport { args ->
             if (args.method == "GET") {
                 reads++
-                if (args.target == "module/wifi") snapshot(content, "$revision")
+                if (args.target == "module/wifi") snapshot(contentWithPolicy, "$revision")
                 else snapshot("""{"auto_start":false}""", "auto")
             } else {
                 entered.complete(Unit); withTimeout(5_000) { release.await() }
                 args.assertConfig("PUT", "module/wifi", "$revision")
-                content = args.text("content")
+                val written = args.text("content")
+                // 整份 module.json 回写：wifi 为本次编辑值，proxy/carrier 透传不回退默认。
+                assertEquals(
+                    Json.parseToJsonElement(written).jsonObject["proxy"],
+                    Json.parseToJsonElement(defaultWifiWithPolicy).jsonObject["proxy"])
+                assertEquals(
+                    Json.parseToJsonElement(written).jsonObject["carrier"],
+                    Json.parseToJsonElement(defaultWifiWithPolicy).jsonObject["carrier"])
+                content = written
+                contentWithPolicy = written
                 revision++
                 output("""{"revision":"$revision"}""")
             }

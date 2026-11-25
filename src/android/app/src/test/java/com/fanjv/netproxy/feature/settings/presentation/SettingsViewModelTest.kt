@@ -4,8 +4,10 @@ import com.fanjv.netproxy.core.api.*
 
 import com.fanjv.netproxy.core.config.*
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
+import com.fanjv.netproxy.feature.settings.model.CarrierPolicySettings
 import com.fanjv.netproxy.feature.settings.model.ModuleAutoStartConfig
 import com.fanjv.netproxy.feature.settings.model.ModuleWifiConfig
+import com.fanjv.netproxy.feature.settings.model.ProxyPolicySettings
 import com.fanjv.netproxy.feature.settings.model.WifiPolicySettings
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +37,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
     @get:Rule val folder = TemporaryFolder()
 
@@ -45,12 +48,18 @@ class SettingsViewModelTest {
 
     private inner class Network {
         var wifi = WifiPolicySettings()
+        var proxy = ProxyPolicySettings()
+        var carrier = CarrierPolicySettings()
         var autoStart = true
         var wifiRevision = 0
         var autoStartRevision = 10
         val calls = CopyOnWriteArrayList<ApiTestRequest>()
+        // applyWifi 提交前会回读 module/wifi 以透传 proxy/carrier；该回读对用户不可见，
+        // 不计入 reads，保持「读取次数」断言仍表达真实的分区读取。
+        var internalReads = 0
+        var activeWrites = 0
         val writes get() = calls.count { it.method == "PUT" }
-        val reads get() = calls.count { it.method == "GET" }
+        val reads get() = calls.count { it.method == "GET" } - internalReads
         var before: suspend (String) -> Unit = {}
         var beforeRead: suspend (String) -> Unit = {}
 
@@ -60,19 +69,27 @@ class SettingsViewModelTest {
                 val target = args.target
                 assertTrue(target in setOf("module/wifi", "module/auto_start"))
                 val data = if (args.method == "GET") {
+                    // 写入进行中的回读来自 applyWifi 的 proxy/carrier 透传，不计入 reads。
+                    if (target == "module/wifi" && activeWrites > 0) internalReads++
                     beforeRead(target)
-                    val content = if (target == "module/wifi") Json.encodeToString(ModuleWifiConfig(wifi))
+                    val content = if (target == "module/wifi") Json.encodeToString(ModuleWifiConfig(wifi, proxy, carrier))
                         else Json.encodeToString(ModuleAutoStartConfig(autoStart))
                     val revision = if (target == "module/wifi") "wifi-$wifiRevision" else "auto-$autoStartRevision"
                     JsonObject(mapOf("content" to JsonPrimitive(content), "revision" to JsonPrimitive(revision))).toString()
                 } else {
                     assertEquals("/config", args.path)
-                    before(target)
+                    activeWrites++
+                    try { before(target) } finally { activeWrites-- }
                     val content = args.text("content")
-                    assertEquals(setOf(target.substringAfter('/')), Json.parseToJsonElement(content).jsonObject.keys)
+                    // module/wifi 提交整份 module.json：wifi 分区 + 必须透传的 proxy/carrier。
+                    val expectedKeys = if (target == "module/wifi") setOf("wifi", "proxy", "carrier")
+                        else setOf(target.substringAfter('/'))
+                    assertEquals(expectedKeys, Json.parseToJsonElement(content).jsonObject.keys)
                     val revision = if (target == "module/wifi") {
                         if (args.text("revision") != "wifi-$wifiRevision") throw ModuleApiException("config.conflict", "conflict")
-                        wifi = Json.decodeFromString<ModuleWifiConfig>(content).wifi
+                        Json.decodeFromString<ModuleWifiConfig>(content).let {
+                            wifi = it.wifi; proxy = it.proxy; carrier = it.carrier
+                        }
                         "wifi-${++wifiRevision}"
                     } else {
                         if (args.text("revision") != "auto-$autoStartRevision") throw ModuleApiException("config.conflict", "conflict")
