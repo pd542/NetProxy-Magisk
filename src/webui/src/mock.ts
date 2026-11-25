@@ -31,6 +31,8 @@ let runtimePrepared = false
 const MODULE_CONFIG = {
   auto_start: false,
   wifi: { enabled: false, mode: 'blacklist', blacklist: [] as string[], whitelist: [] as string[], proxy_on_non_wifi: true },
+  proxy: { enabled: true },
+  carrier: { enabled: true },
 }
 
 const INBOUND_CONFIG = { ...inboundDefaults, backend: inboundDefaults.backend as InboundBackend }
