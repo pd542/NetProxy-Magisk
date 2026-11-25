@@ -1,0 +1,89 @@
+name: 构建未签名 Android 管理器
+description: 构建 Release APK 与 Android 平台辅助程序，不做签名（供自行签名或本地侧载）
+
+inputs:
+  build-manager:
+    description: 是否构建当前源码的 Release APK
+    default: 'true'
+  verify:
+    description: 是否执行 Android 单元测试与 Lint
+    default: 'true'
+  assemble-debug:
+    description: 是否额外构建 Debug APK
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: 计算管理器构建元信息
+      id: meta
+      shell: bash
+      run: sh .github/scripts/build-metadata.sh >> "$GITHUB_OUTPUT"
+
+    - name: 配置 Android JDK
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: 25
+
+    - name: 配置 Gradle 缓存
+      uses: gradle/actions/setup-gradle@v5
+
+    - name: 确认 Android SDK 组件
+      shell: bash
+      run: |
+        if [ ! -f "$ANDROID_HOME/platforms/android-37.2/android.jar" ] ||
+           [ ! -x "$ANDROID_HOME/build-tools/37.0.0/aapt2" ]; then
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-37.2' 'build-tools;37.0.0' --channel=1
+        fi
+
+    - name: 构建管理器并执行所需验证
+      shell: bash
+      working-directory: src/android
+      env:
+        BUILD_MANAGER: ${{ inputs.build-manager }}
+        VERIFY_ANDROID: ${{ inputs.verify }}
+        ASSEMBLE_DEBUG: ${{ inputs.assemble-debug }}
+        MANAGER_VERSION: ${{ steps.meta.outputs.manager_version }}
+        BUILD_ID: ${{ steps.meta.outputs.short_sha }}
+      run: |
+        set --
+        if [ "$BUILD_MANAGER" = true ]; then
+          set -- :app:assembleRelease :platform:assembleDex \
+            -PnetproxyManagerCi=true \
+            -PnetproxyManagerBuildId="$BUILD_ID" \
+            -PnetproxyManagerVersion="$MANAGER_VERSION"
+        fi
+        if [ "$VERIFY_ANDROID" = true ]; then
+          set -- "$@" testDebugUnitTest :scripta:editor:testAndroidHostTest :scripta:editor:desktopTest lintDebug :platform:assembleDex
+        fi
+        if [ "$ASSEMBLE_DEBUG" = true ]; then
+          set -- "$@" :app:assembleDebug
+        fi
+        test "$#" -gt 0
+        ./gradlew "$@" --build-cache --parallel --no-daemon
+
+    - name: 整理未签名产物
+      if: inputs.build-manager == 'true'
+      shell: bash
+      env:
+        MANAGER_VERSION: ${{ steps.meta.outputs.manager_version }}
+        BUILD_ID: ${{ steps.meta.outputs.short_sha }}
+        COMMIT_COUNT: ${{ steps.meta.outputs.commit_count }}
+      run: |
+        set -euo pipefail
+        UNSIGNED_APK="src/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+        test -s "$UNSIGNED_APK"
+
+        # 只校验构建元信息，产物保持未签名状态供用户自行签名。
+        APK_INFO="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$UNSIGNED_APK")"
+        printf '%s\n' "$APK_INFO" | grep -F "name='com.fanjv.netproxy'"
+        printf '%s\n' "$APK_INFO" | grep -F "versionCode='$COMMIT_COUNT'"
+        printf '%s\n' "$APK_INFO" | grep -F "versionName='${MANAGER_VERSION}-ci.${BUILD_ID}'"
+
+        mkdir -p dist
+        install -m 0644 "$UNSIGNED_APK" dist/NetProxy-unsigned.apk
+        # 模块包内的 NetProxy.apk 位置保持未签名产物，便于自行替换签名版。
+        install -m 0644 "$UNSIGNED_APK" src/module/NetProxy.apk
+        ls -l dist/NetProxy-unsigned.apk

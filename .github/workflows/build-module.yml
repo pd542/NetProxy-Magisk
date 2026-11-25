@@ -1,4 +1,4 @@
-name: 并行构建模块与管理器
+name: 并行构建模块与管理器（未签名）
 
 on:
   workflow_call:
@@ -7,15 +7,10 @@ on:
         description: 是否同时执行 Android 单元测试与 Lint
         type: boolean
         default: false
-    secrets:
-      ANDROID_KEYSTORE_BASE64:
-        required: true
-      ANDROID_KEYSTORE_PASSWORD:
-        required: true
-      ANDROID_KEY_ALIAS:
-        required: true
-      ANDROID_KEY_PASSWORD:
-        required: true
+      build-android:
+        description: 是否构建管理器 APK（未签名）
+        type: boolean
+        default: true
     outputs:
       version:
         value: ${{ jobs.module.outputs.version }}
@@ -47,8 +42,10 @@ jobs:
         id: pack
         uses: ./.github/actions/build-module
         with:
-          posthog-project-token: ${{ vars.POSTHOG_PROJECT_TOKEN }}
-          posthog-host: ${{ vars.POSTHOG_HOST }}
+          # 本 fork 只做编译出包：不注入遥测、不做构建签名。
+          telemetry-required: 'false'
+          posthog-project-token: ''
+          posthog-host: ''
 
       - name: 保存已验证的模块内容
         uses: actions/upload-artifact@v7
@@ -61,7 +58,8 @@ jobs:
           overwrite: true
 
   android:
-    name: 构建与验证 Android 管理器
+    name: 构建 Android 管理器（未签名）
+    if: inputs.build-android
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -73,24 +71,21 @@ jobs:
           sparse-checkout: |
             src/android
             src/module/config/singbox
-            .github/actions/verify-android
+            .github/actions/build-android-unsigned
             .github/scripts
 
-      - name: 构建并签名管理器，按需执行验证
-        uses: ./.github/actions/verify-android
+      - name: 构建未签名管理器，按需执行验证
+        uses: ./.github/actions/build-android-unsigned
         with:
           build-manager: 'true'
           verify: ${{ inputs.verify-android }}
-          signing-keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          signing-store-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          signing-key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
-          signing-key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: 保存本次签名的管理器
+      - name: 保存未签名管理器
         uses: actions/upload-artifact@v7
         with:
           name: manager-binaries
           path: |
+            dist/NetProxy-unsigned.apk
             src/module/NetProxy.apk
             src/android/platform/build/dex/classes.dex
           if-no-files-found: error
@@ -101,6 +96,7 @@ jobs:
   package:
     name: 汇合模块与管理器
     needs: [module, android]
+    if: always() && !cancelled() && needs.module.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -116,14 +112,22 @@ jobs:
         with:
           name: module-content
 
-      - name: 下载本次签名管理器
+      - name: 下载本次管理器产物
+        if: needs.android.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: manager-binaries
           path: manager
 
       - name: 完成唯一模块包
-        run: sh .github/scripts/complete-module.sh "$MODULE_NAME" manager/module/NetProxy.apk manager/android/platform/build/dex/classes.dex
+        run: |
+          set -euo pipefail
+          if [ -s manager/src/module/NetProxy.apk ] && [ -s manager/src/android/platform/build/dex/classes.dex ]; then
+            sh .github/scripts/complete-module.sh "$MODULE_NAME" \
+              manager/src/module/NetProxy.apk manager/src/android/platform/build/dex/classes.dex
+          else
+            echo "管理器产物缺失，仅保留模块内容（不含管理器 APK）"
+          fi
 
       - name: 保存最终模块包
         uses: actions/upload-artifact@v7

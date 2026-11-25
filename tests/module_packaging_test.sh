@@ -8,7 +8,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_ACTION="$ROOT/.github/actions/build-module/action.yml"
-ANDROID_ACTION="$ROOT/.github/actions/verify-android/action.yml"
+ANDROID_ACTION="$ROOT/.github/actions/build-android-unsigned/action.yml"
 METADATA_SCRIPT="$ROOT/.github/scripts/build-metadata.sh"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release.yml"
 CI_WORKFLOW="$ROOT/.github/workflows/ci.yml"
@@ -42,14 +42,11 @@ assert_contains "$ANDROID_ACTION" 'set -- :app:assembleRelease'
 assert_contains "$ANDROID_ACTION" 'set -- "$@" testDebugUnitTest :scripta:editor:testAndroidHostTest :scripta:editor:desktopTest lintDebug'
 assert_contains "$ANDROID_ACTION" './gradlew "$@" --build-cache --parallel --no-daemon'
 assert_contains "$ANDROID_ACTION" '-PnetproxyManagerCi=true'
-assert_contains "$ANDROID_ACTION" 'printf '\''%s'\'' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"'
-assert_contains "$ANDROID_ACTION" '--ks-key-alias "$SIGNING_KEY_ALIAS"'
-assert_contains "$ANDROID_ACTION" '--ks-pass env:SIGNING_STORE_PASSWORD'
-assert_contains "$ANDROID_ACTION" '--key-pass env:SIGNING_KEY_PASSWORD'
 assert_contains "$ANDROID_ACTION" 'versionName='\''${MANAGER_VERSION}-ci.${BUILD_ID}'\'''
-assert_contains "$ANDROID_ACTION" '--v4-signing-enabled false'
-assert_contains "$ANDROID_ACTION" 'apksigner" verify --verbose'
-assert_contains "$ANDROID_ACTION" 'install -m 0644 "$SIGNED_APK" src/module/NetProxy.apk'
+# 管理器产物保持未签名，不再调用签名器，也不读取任何密钥。
+assert_not_contains "$ANDROID_ACTION" 'apksigner|keytool|SIGNING_KEYSTORE|SIGNING_STORE_PASSWORD|SIGNING_KEY_ALIAS'
+assert_contains "$ANDROID_ACTION" 'dist/NetProxy-unsigned.apk'
+assert_contains "$ANDROID_ACTION" 'install -m 0644 "$UNSIGNED_APK" src/module/NetProxy.apk'
 assert_contains "$ROOT/src/android/app/build.gradle.kts" 'versionName = if (ciManagerBuild)'
 assert_contains "$ROOT/.gitignore" 'src/module/NetProxy.apk'
 assert_contains "$VERIFY_SCRIPT" './cmd/netproxyctl'
@@ -65,11 +62,19 @@ assert_not_contains "$PR_VERIFY_WORKFLOW" 'TG_BOT_TOKEN'
 assert_contains "$VERIFY_SCRIPT" '-ldflags="-s -w -buildid='
 assert_contains "$VERIFY_SCRIPT" 'internal/telemetry.ProjectToken=${POSTHOG_PROJECT_TOKEN:-}'
 assert_contains "$VERIFY_SCRIPT" 'internal/telemetry.IngestionHost=${POSTHOG_HOST:-}'
-assert_contains "$BUILD_ACTION" "NETPROXY_TELEMETRY_REQUIRED: '1'"
+# 本 fork 只编译出包：模块构建默认不要求遥测凭据，也不注入任何 token。
+assert_contains "$BUILD_ACTION" 'NETPROXY_TELEMETRY_REQUIRED: ${{ inputs.telemetry-required }}'
 assert_contains "$BUILD_ACTION" 'POSTHOG_PROJECT_TOKEN: ${{ inputs.posthog-project-token }}'
 assert_contains "$BUILD_ACTION" 'POSTHOG_HOST: ${{ inputs.posthog-host }}'
-assert_contains "$SHARED_WORKFLOW" 'posthog-project-token: ${{ vars.POSTHOG_PROJECT_TOKEN }}'
-assert_contains "$SHARED_WORKFLOW" 'posthog-host: ${{ vars.POSTHOG_HOST }}'
+assert_contains "$BUILD_ACTION" "default: 'false'"
+assert_not_contains "$BUILD_ACTION" 'vars.POSTHOG'
+assert_contains "$SHARED_WORKFLOW" "telemetry-required: 'false'"
+assert_contains "$SHARED_WORKFLOW" "posthog-project-token: ''"
+# 管理器 APK 走未签名构建，不再依赖任何签名密钥。
+assert_not_contains "$SHARED_WORKFLOW" 'ANDROID_KEYSTORE'
+assert_not_contains "$SHARED_WORKFLOW" 'apksigner'
+assert_contains "$SHARED_WORKFLOW" 'build-android-unsigned'
+assert_contains "$SHARED_WORKFLOW" 'NetProxy-unsigned.apk'
 assert_not_contains "$BUILD_ACTION" '\$\{\{[[:space:]]*vars\.'
 assert_not_contains "$BUILD_ACTION" 'full_name|lite_name|_lite'
 assert_not_contains "$BUILD_ACTION" 'netproxy-native|cmd/netproxy-native'
@@ -123,7 +128,8 @@ assert_not_contains "$RELEASE_WORKFLOW" 'full_name|lite_name|FULL_NAME|LITE_NAME
 
 assert_contains "$SHARED_WORKFLOW" '${{ steps.pack.outputs.module_name }}'
 assert_contains "$SHARED_WORKFLOW" 'needs: [module, android]'
-assert_contains "$SHARED_WORKFLOW" 'sh .github/scripts/complete-module.sh "$MODULE_NAME" manager/module/NetProxy.apk manager/android/platform/build/dex/classes.dex'
+assert_contains "$SHARED_WORKFLOW" 'sh .github/scripts/complete-module.sh "$MODULE_NAME"'
+assert_contains "$SHARED_WORKFLOW" 'manager/src/module/NetProxy.apk manager/src/android/platform/build/dex/classes.dex'
 assert_contains "$SHARED_WORKFLOW" 'name: module-content'
 assert_contains "$SHARED_WORKFLOW" 'name: manager-binaries'
 assert_contains "$SHARED_WORKFLOW" 'name: module-package'
@@ -151,9 +157,10 @@ assert_not_contains "$CI_WORKFLOW" 'full_name|lite_name'
 for workflow in "$CI_WORKFLOW" "$RELEASE_WORKFLOW"; do
   assert_contains "$workflow" 'uses: ./.github/workflows/build-module.yml'
   assert_contains "$workflow" 'name: module-package'
+  # 本 fork 只编译：任何签名密钥都不再参与 CI。
   for secret in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-    assert_contains "$workflow" "$secret: \${{ secrets.$secret }}"
-    assert_contains "$SHARED_WORKFLOW" "\${{ secrets.$secret }}"
+    assert_not_contains "$workflow" "$secret"
+    assert_not_contains "$SHARED_WORKFLOW" "$secret"
   done
 done
 assert_contains "$SHARED_WORKFLOW" "build-manager: 'true'"

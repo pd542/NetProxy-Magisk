@@ -1,13 +1,20 @@
 name: 构建模块内容
 description: 验证并构建原生组件与 WebUI，生成等待追加管理器的 XZ 模块内容
 
+# 本 fork 仅用于自编译模块：不注入遥测凭据、不生成构建签名。
 inputs:
+  telemetry-required:
+    description: 是否要求提供有效 PostHog 凭据（默认关闭，编出的包不带遥测）
+    required: false
+    default: 'false'
   posthog-project-token:
-    description: 用于构建注入的 PostHog Project Token
-    required: true
+    description: 可选，PostHog Project Token；为空时不注入遥测
+    required: false
+    default: ''
   posthog-host:
-    description: 用于构建注入的 PostHog ingestion host
-    required: true
+    description: 可选，PostHog ingestion host
+    required: false
+    default: ''
 
 # 被 ci.yml 与 release.yml 复用的共享打包逻辑（调用前需已 checkout，且 fetch-depth: 0 以便统计提交数）
 outputs:
@@ -52,8 +59,8 @@ runs:
       shell: bash
       env:
         NETPROXY_CI_BUILD_DIR: ${{ runner.temp }}/netproxy-build
-        # fork 未配置遥测变量时跳过强制校验，避免 CI 因缺少外部服务凭据中断。
-        NETPROXY_TELEMETRY_REQUIRED: ${{ inputs.posthog-project-token != '' && '1' || '0' }}
+        # 仅在显式要求时校验遥测凭据；默认走空 token 编译，产物不上报。
+        NETPROXY_TELEMETRY_REQUIRED: ${{ inputs.telemetry-required }}
         POSTHOG_PROJECT_TOKEN: ${{ inputs.posthog-project-token }}
         POSTHOG_HOST: ${{ inputs.posthog-host }}
       run: |

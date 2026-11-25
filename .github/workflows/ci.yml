@@ -60,13 +60,10 @@ jobs:
     needs: changes
     if: needs.changes.outputs.module == 'true'
     uses: ./.github/workflows/build-module.yml
-    secrets:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    # 本 fork 只编译：不配置签名密钥，产物管理器 APK 为未签名。
     with:
       verify-android: ${{ needs.changes.outputs.android == 'true' }}
+      build-android: true
 
   publish:
     name: 发布已验证的开发包
@@ -92,6 +89,13 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: module-package
+
+      - name: 下载未签名管理器
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: manager-binaries
+          path: manager
 
       - name: 设置构建元信息
         run: |
@@ -132,13 +136,20 @@ jobs:
           # 等待 API 状态同步
           sleep 2
           
+          # 未签名管理器随发布一起提供
+          assets=("$MODULE_NAME")
+          if [ -s manager/dist/NetProxy-unsigned.apk ]; then
+            cp manager/dist/NetProxy-unsigned.apk ./NetProxy-unsigned.apk
+            assets+=("./NetProxy-unsigned.apk")
+          fi
+
           # 创建新的 nightly 发布并上传资产
           gh release create nightly \
             --target "$GITHUB_SHA" \
             --prerelease \
             --title "nightly Pre-release" \
             --notes-file "$notes_file" \
-            "$MODULE_NAME"
+            "${assets[@]}"
 
       - name: Telegram 构建成功通知
         if: success()
