@@ -20,6 +20,8 @@ test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类�
   assert.deepEqual(readJSON('src/module/config/module.json'), {
     auto_start: false,
     wifi: { enabled: false, mode: 'blacklist', blacklist: [], whitelist: [], proxy_on_non_wifi: true },
+    proxy: { enabled: true },
+    carrier: { enabled: true },
   })
 })
 
