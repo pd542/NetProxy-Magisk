@@ -54,12 +54,8 @@ class SettingsViewModelTest {
         var wifiRevision = 0
         var autoStartRevision = 10
         val calls = CopyOnWriteArrayList<ApiTestRequest>()
-        // applyWifi 提交前会回读 module/wifi 以透传 proxy/carrier；该回读对用户不可见，
-        // 不计入 reads，保持「读取次数」断言仍表达真实的分区读取。
-        var internalReads = 0
-        var activeWrites = 0
         val writes get() = calls.count { it.method == "PUT" }
-        val reads get() = calls.count { it.method == "GET" } - internalReads
+        val reads get() = calls.count { it.method == "GET" }
         var before: suspend (String) -> Unit = {}
         var beforeRead: suspend (String) -> Unit = {}
 
@@ -69,8 +65,6 @@ class SettingsViewModelTest {
                 val target = args.target
                 assertTrue(target in setOf("module/wifi", "module/auto_start"))
                 val data = if (args.method == "GET") {
-                    // 写入进行中的回读来自 applyWifi 的 proxy/carrier 透传，不计入 reads。
-                    if (target == "module/wifi" && activeWrites > 0) internalReads++
                     beforeRead(target)
                     val content = if (target == "module/wifi") Json.encodeToString(ModuleWifiConfig(wifi, proxy, carrier))
                         else Json.encodeToString(ModuleAutoStartConfig(autoStart))
@@ -78,8 +72,7 @@ class SettingsViewModelTest {
                     JsonObject(mapOf("content" to JsonPrimitive(content), "revision" to JsonPrimitive(revision))).toString()
                 } else {
                     assertEquals("/config", args.path)
-                    activeWrites++
-                    try { before(target) } finally { activeWrites-- }
+                    before(target)
                     val content = args.text("content")
                     // module/wifi 提交整份 module.json：wifi 分区 + 必须透传的 proxy/carrier。
                     val expectedKeys = if (target == "module/wifi") setOf("wifi", "proxy", "carrier")

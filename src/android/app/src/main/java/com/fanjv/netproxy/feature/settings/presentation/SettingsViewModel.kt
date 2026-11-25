@@ -83,7 +83,8 @@ internal class SettingsViewModel(
                     requestedWifi = null
                     if (saved == confirmedWifi) continue
                     val snapshot = checkNotNull(wifiSnapshot)
-                    val revision = repository.applyWifi(saved, snapshot.revision)
+                    // snapshot 已带 proxy/carrier，直接透传，避免在写入任务内回读自身。
+                    val revision = repository.applyWifi(saved, snapshot.revision, snapshot)
                     wifiSnapshot = snapshot.copy(wifi = saved, revision = revision)
                 }
             } finally {

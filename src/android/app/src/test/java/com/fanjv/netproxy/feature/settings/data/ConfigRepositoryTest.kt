@@ -3,6 +3,9 @@ package com.fanjv.netproxy.feature.settings.data
 import com.fanjv.netproxy.core.api.*
 
 import com.fanjv.netproxy.core.config.ConfigurationWrites
+import com.fanjv.netproxy.feature.settings.model.CarrierPolicySettings
+import com.fanjv.netproxy.feature.settings.model.ModuleWifiConfig
+import com.fanjv.netproxy.feature.settings.model.ProxyPolicySettings
 import com.fanjv.netproxy.feature.settings.model.WifiPolicySettings
 import com.fanjv.netproxy.feature.settings.presentation.SettingsViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -44,6 +47,10 @@ class ConfigRepositoryTest {
     // 模块回读内容带链路开关；写回时必须原样透传，不能重置为默认值。
     private val defaultWifiWithPolicy = """{"wifi":{"enabled":false,"mode":"blacklist","blacklist":[],"whitelist":[],"proxy_on_non_wifi":true},"proxy":{"enabled":false},"carrier":{"enabled":false}}"""
     private val expectedWifiWrite = defaultWifiWithPolicy
+    private val defaultPolicyCarry = ModuleWifiConfig(
+        proxy = ProxyPolicySettings(enabled = false),
+        carrier = CarrierPolicySettings(enabled = false),
+    )
 
     private fun output(data: String) = ModuleHttpResponse(200, """{"schema":1,"ok":true,"code":"test","message":"","data":$data}""")
 
@@ -94,25 +101,20 @@ class ConfigRepositoryTest {
         val client = ModuleApiClient(transport = TestApiTransport { args ->
             val target = args.target
             assertTrue(target in setOf("module/wifi", "module/auto_start"))
-            if (args.method == "GET") {
-                // applyWifi 提交前会回读当前 module/wifi，用于透传 proxy/carrier。
-                args.assertConfig("GET", "module/wifi")
-                snapshot(defaultWifiWithPolicy, "wifi-read")
-            } else {
-                assertEquals("PUT", args.method)
-                assertEquals("/config", args.path)
-                assertEquals(if (target == "module/wifi") "wifi-read" else "auto-read", args.text("revision"))
-                assertEquals(
-                    Json.parseToJsonElement(if (target == "module/wifi") expectedWifiWrite else """{"auto_start":false}"""),
-                    Json.parseToJsonElement(args.text("content")))
-                assertEquals(setOf("content", "revision"), args.body.keys)
-                output("""{"revision":"$target-saved"}""")
-            }
+            assertEquals("PUT", args.method)
+            assertEquals("/config", args.path)
+            assertEquals(if (target == "module/wifi") "wifi-read" else "auto-read", args.text("revision"))
+            assertEquals(
+                Json.parseToJsonElement(if (target == "module/wifi") expectedWifiWrite else """{"auto_start":false}"""),
+                Json.parseToJsonElement(args.text("content")))
+            assertEquals(setOf("content", "revision"), args.body.keys)
+            output("""{"revision":"$target-saved"}""")
         })
         val repository = ConfigRepository(client, writes::await)
         withTimeout(5_000) {
             writes.launch("module/wifi", write = {
-                assertEquals("module/wifi-saved", repository.applyWifi(WifiPolicySettings(), "wifi-read"))
+                assertEquals("module/wifi-saved",
+                    repository.applyWifi(WifiPolicySettings(), "wifi-read", defaultPolicyCarry))
             }).join()
             writes.launch("module/auto_start", write = {
                 assertEquals("module/auto_start-saved", repository.applyAutoStart(false, "auto-read"))
@@ -207,15 +209,14 @@ class ConfigRepositoryTest {
         val saveScope = CoroutineScope(coroutineContext + Job())
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        var content = defaultWifi
-        // 模块回读内容需带 proxy/carrier，写回时原样透传。
-        var contentWithPolicy = defaultWifiWithPolicy
+        // 模块回读内容带 proxy/carrier；写回必须原样透传，不能回退默认值。
+        var content = defaultWifiWithPolicy
         var revision = 0
         var reads = 0
         val client = ModuleApiClient(transport = TestApiTransport { args ->
             if (args.method == "GET") {
                 reads++
-                if (args.target == "module/wifi") snapshot(contentWithPolicy, "$revision")
+                if (args.target == "module/wifi") snapshot(content, "$revision")
                 else snapshot("""{"auto_start":false}""", "auto")
             } else {
                 entered.complete(Unit); withTimeout(5_000) { release.await() }
@@ -229,7 +230,6 @@ class ConfigRepositoryTest {
                     Json.parseToJsonElement(written).jsonObject["carrier"],
                     Json.parseToJsonElement(defaultWifiWithPolicy).jsonObject["carrier"])
                 content = written
-                contentWithPolicy = written
                 revision++
                 output("""{"revision":"$revision"}""")
             }
