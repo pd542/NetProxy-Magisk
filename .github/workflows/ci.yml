@@ -119,13 +119,14 @@ jobs:
             echo
             echo "## 提交记录"
             echo
+            # GitHub Release 正文上限 125000 字符，无基线 Tag 时也必须限长。
             if [ -n "$base_tag" ]; then
               git log --first-parent --pretty=format:"- %s ([%h](${{ github.server_url }}/${{ github.repository }}/commit/%H))" "$base_tag..$GITHUB_SHA"
               echo
               echo
               echo "完整对比: ${{ github.server_url }}/${{ github.repository }}/compare/${base_tag}...nightly"
             else
-              git log --first-parent --pretty=format:"- %s ([%h](${{ github.server_url }}/${{ github.repository }}/commit/%H))" "$GITHUB_SHA"
+              git log --first-parent -n 300 --pretty=format:"- %s ([%h](${{ github.server_url }}/${{ github.repository }}/commit/%H))" "$GITHUB_SHA"
               echo
             fi
           } > "$notes_file"
