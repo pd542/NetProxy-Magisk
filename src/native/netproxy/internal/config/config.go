@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
@@ -18,9 +19,27 @@ import (
 )
 
 type ModuleConfig struct {
-	AutoStart bool       `json:"auto_start"`
-	WiFi      WiFiPolicy `json:"wifi"`
+	AutoStart bool          `json:"auto_start"`
+	WiFi      WiFiPolicy    `json:"wifi"`
+	Proxy     ProxyPolicy   `json:"proxy"`
+	Carrier   CarrierPolicy `json:"carrier"`
 }
+
+// ProxyPolicy 是代理总开关；关闭后内核停止并全量直连。
+type ProxyPolicy struct {
+	Enabled bool `json:"enabled"`
+}
+
+// CarrierPolicy 控制 SIM 运营商识别，是链路匹配的输入之一。
+type CarrierPolicy struct {
+	Enabled bool `json:"enabled"`
+}
+
+// DefaultProxyPolicy 的默认值保持内核自动启动。
+func DefaultProxyPolicy() ProxyPolicy { return ProxyPolicy{Enabled: true} }
+
+// DefaultCarrierPolicy 默认开启运营商识别，未插卡时不会产生匹配。
+func DefaultCarrierPolicy() CarrierPolicy { return CarrierPolicy{Enabled: true} }
 
 type WiFiPolicy struct {
 	Enabled        bool     `json:"enabled"`
@@ -39,7 +58,9 @@ func (policy WiFiPolicy) Equal(other WiFiPolicy) bool {
 // DefaultModule 返回全新配置使用的唯一默认值集合。
 func DefaultModule() ModuleConfig {
 	return ModuleConfig{
-		WiFi: WiFiPolicy{Mode: "blacklist", Blacklist: []string{}, Whitelist: []string{}, ProxyOnNonWiFi: true},
+		WiFi:    WiFiPolicy{Mode: "blacklist", Blacklist: []string{}, Whitelist: []string{}, ProxyOnNonWiFi: true},
+		Proxy:   DefaultProxyPolicy(),
+		Carrier: DefaultCarrierPolicy(),
 	}
 }
 
@@ -113,4 +134,23 @@ func Lock(ctx context.Context, path string) (*Editor, error) {
 		return nil, err
 	}
 	return &Editor{Lock: lock}, nil
+}
+
+// SaveModule 原子写入模块配置，保持 0600 权限。
+func SaveModule(path string, config ModuleConfig) error {
+	if err := config.validate(); err != nil {
+		return err
+	}
+	content, err := json.Marshal(config, jsontext.WithIndent("  "))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	temporary := path + ".tmp"
+	if err := os.WriteFile(temporary, append(content, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(temporary, path)
 }

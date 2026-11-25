@@ -153,8 +153,12 @@ func Prepare(ctx context.Context, options Options) (PrepareResult, error) {
 	if err != nil {
 		return PrepareResult{}, err
 	}
+	plan, err := prepareChainPlan(ctx, options, runtime)
+	if err != nil {
+		return PrepareResult{}, err
+	}
 	configPath := paths.RuntimeConfig(options.RuntimeDir)
-	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers); err != nil {
+	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers, plan); err != nil {
 		return PrepareResult{}, err
 	}
 	for _, ref := range built.MissingPackages {

@@ -10,6 +10,8 @@ SKIPUNZIP=1
 umask 077
 readonly MODULE_ID=netproxy
 readonly CONFIG_ENTRIES="config/module.json config/inbound/inbound.json config/singbox/config.json config/singbox/rules/local"
+# 链路配置为可选文件：旧版本升级时不存在也不应阻断安装，缺失时按“未启用”处理。
+readonly OPTIONAL_CONFIG_ENTRIES="config/chains.json"
 readonly EXECUTABLE_FILES="bin/sing-box bin/netproxyctl action.sh netproxyctl service.sh uninstall.sh"
 
 INSTALL_MODE=fresh

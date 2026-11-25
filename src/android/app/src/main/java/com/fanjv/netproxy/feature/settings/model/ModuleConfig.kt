@@ -23,7 +23,24 @@ data class WifiPolicySettings(
 @Serializable
 internal data class ModuleWifiConfig(
     val wifi: WifiPolicySettings = WifiPolicySettings(),
+    // proxy 与 carrier 由链路功能新增，旧配置缺失时使用默认值。
+    val proxy: ProxyPolicySettings = ProxyPolicySettings(),
+    val carrier: CarrierPolicySettings = CarrierPolicySettings(),
     @Transient val revision: String = ""
+)
+
+/** 代理总开关；关闭后内核停止并全量直连。 */
+@Immutable
+@Serializable
+data class ProxyPolicySettings(
+    val enabled: Boolean = true
+)
+
+/** SIM 运营商识别开关，是链路 MCC/MNC 匹配的输入。 */
+@Immutable
+@Serializable
+data class CarrierPolicySettings(
+    val enabled: Boolean = true
 )
 
 @Serializable

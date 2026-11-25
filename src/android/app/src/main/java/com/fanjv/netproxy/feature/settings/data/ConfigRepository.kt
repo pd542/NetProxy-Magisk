@@ -61,8 +61,16 @@ internal class ConfigRepository(
         }
     }
 
-    suspend fun applyWifi(wifi: WifiPolicySettings, revision: String): String =
-        apply("module/wifi", moduleJson.encodeToString(ModuleWifiConfig(wifi)), revision)
+    suspend fun applyWifi(wifi: WifiPolicySettings, revision: String): String {
+        // module/wifi 提交的是整份 module.json，必须带回已有的 proxy/carrier，
+        // 否则只改 Wi-Fi 策略会把链路相关开关重置为默认值。
+        val current = readWifi()
+        return apply(
+            "module/wifi",
+            moduleJson.encodeToString(ModuleWifiConfig(wifi, current.proxy, current.carrier)),
+            revision
+        )
+    }
 
     suspend fun applyAutoStart(enabled: Boolean, revision: String): String =
         apply("module/auto_start", moduleJson.encodeToString(ModuleAutoStartConfig(enabled)), revision)

@@ -71,6 +71,12 @@ func (l Layout) InboundConfig() string { return filepath.Join(l.Config(), "inbou
 // SingBoxDir 返回 sing-box 静态配置根目录。
 func (l Layout) SingBoxDir() string { return filepath.Join(l.Config(), "singbox") }
 
+// ChainsConfig 返回链路与网络匹配配置文件路径。
+func (l Layout) ChainsConfig() string { return filepath.Join(l.Config(), "chains.json") }
+
+// ChainSelectorState 返回最近一次命中的链路状态文件路径。
+func (l Layout) ChainSelectorState() string { return filepath.Join(l.DevRoot(), "chain_state") }
+
 // Runtime 返回运行时生成目录。
 func (l Layout) Runtime() string { return filepath.Join(l.moduleRoot, "runtime") }
 

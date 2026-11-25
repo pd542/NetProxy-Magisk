@@ -75,6 +75,8 @@ func (c *cli) run(ctx context.Context, args []string) int {
 		handler = c.subscription
 	case "mode":
 		handler = c.mode
+	case "chain":
+		handler = c.chain
 	case "network":
 		handler = c.network
 	case "app":

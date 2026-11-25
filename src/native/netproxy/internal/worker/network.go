@@ -55,14 +55,22 @@ type NetworkState struct {
 	NetworkType     string
 	SSID            string
 	ActiveInterface string
+	// MCC/MNC 是当前默认数据卡的运营商代码，Wi-Fi 优先时为空。
+	MCC string
+	MNC string
+	// ICCID 是默认数据卡集成电路卡识别码，用于补充运营商号段匹配。
+	ICCID string
 }
 
-// Fingerprint 返回会影响 Wi-Fi 策略选择的稳定指纹。
+// Fingerprint 返回会影响链路与 Wi-Fi 策略选择的稳定指纹。
 func (state NetworkState) Fingerprint() string {
 	return strings.Join([]string{
 		state.NetworkType,
 		state.SSID,
 		state.ActiveInterface,
+		state.MCC,
+		state.MNC,
+		state.ICCID,
 	}, "\x00")
 }
 
@@ -301,6 +309,10 @@ func getNetworkStateWith(
 	}
 
 	state.ActiveInterface = activeInterface
+	// Wi-Fi 生效时以 Wi-Fi 为准；只有非 Wi-Fi 出口才采集 SIM 运营商信息。
+	if state.NetworkType != "wifi" {
+		state.MCC, state.MNC, state.ICCID = readCarrierInfo(ctx)
+	}
 	return state, nil
 }
 

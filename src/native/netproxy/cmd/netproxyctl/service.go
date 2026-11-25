@@ -13,9 +13,18 @@ func (c *cli) service(ctx context.Context, args []string) error {
 		operation = args[0]
 	}
 	switch operation {
-	case "status", "start", "stop", "restart", "reload", "check", "toggle":
+	case "status", "start", "stop", "restart", "reload", "check", "toggle", "pause", "resume":
 	default:
-		return usageError("用法: netproxyctl service status|start|stop|restart|reload|check|toggle")
+		return usageError("用法: netproxyctl service status|start|stop|restart|reload|check|toggle|pause|resume")
+	}
+	// pause/resume 持久化代理总开关，使重启后仍保持用户选择。
+	if operation == "pause" || operation == "resume" {
+		state, err := moduleapp.SetProxyEnabled(ctx, c.options, operation == "resume")
+		if err != nil {
+			return err
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "service." + operation, Message: "代理总开关已更新", Data: state})
+		return nil
 	}
 	data, err := moduleapp.ManageService(ctx, c.options, operation)
 	if err != nil {

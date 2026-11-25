@@ -82,8 +82,9 @@ internal class SettingsViewModel(
                     val saved = requestedWifi!!
                     requestedWifi = null
                     if (saved == confirmedWifi) continue
-                    val revision = repository.applyWifi(saved, checkNotNull(wifiSnapshot).revision)
-                    wifiSnapshot = ModuleWifiConfig(saved, revision)
+                    val snapshot = checkNotNull(wifiSnapshot)
+                    val revision = repository.applyWifi(saved, snapshot.revision)
+                    wifiSnapshot = snapshot.copy(wifi = saved, revision = revision)
                 }
             } finally {
                 mutableState.update { it.copy(isSavingWifi = false, hasPendingWifi = it.wifi != confirmedWifi) }

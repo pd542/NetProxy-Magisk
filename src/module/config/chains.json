@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "enabled": false,
+  "min_hops": 2,
+  "fallback_chain": "direct",
+  "chains": []
+}

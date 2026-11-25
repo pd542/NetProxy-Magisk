@@ -124,6 +124,13 @@ func StartService(ctx context.Context, options Options) (err error) {
 	if err := recoverConfigApply(ctx, options); err != nil {
 		return err
 	}
+	// 代理总开关关闭时保持内核停止，全量直连由系统网络直接完成。
+	if paused, err := proxyPaused(options); err != nil {
+		return err
+	} else if paused {
+		logService(options, "INFO", "service.start", "paused", "代理总开关已关闭，跳过启动")
+		return nil
+	}
 	options, release, err := lockConfigFiles(ctx, options, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir))
 	if err != nil {
 		return err
@@ -272,6 +279,13 @@ func ReloadService(ctx context.Context, options Options) error {
 	if err := recoverConfigApply(ctx, options); err != nil {
 		return err
 	}
+	// 代理总开关关闭时保持内核停止，全量直连由系统网络直接完成。
+	if paused, err := proxyPaused(options); err != nil {
+		return err
+	} else if paused {
+		logService(options, "INFO", "service.start", "paused", "代理总开关已关闭，跳过启动")
+		return nil
+	}
 	options, release, err := lockConfigFiles(ctx, options, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir))
 	if err != nil {
 		return err
@@ -383,6 +397,13 @@ func CheckService(ctx context.Context, options Options) error {
 	defer lock.release()
 	if err := recoverConfigApply(ctx, options); err != nil {
 		return err
+	}
+	// 代理总开关关闭时保持内核停止，全量直连由系统网络直接完成。
+	if paused, err := proxyPaused(options); err != nil {
+		return err
+	} else if paused {
+		logService(options, "INFO", "service.start", "paused", "代理总开关已关闭，跳过启动")
+		return nil
 	}
 	options, release, err := lockConfigFiles(ctx, options, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir))
 	if err != nil {

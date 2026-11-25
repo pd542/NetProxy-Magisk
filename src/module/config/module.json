@@ -6,5 +6,11 @@
     "blacklist": [],
     "whitelist": [],
     "proxy_on_non_wifi": true
+  },
+  "proxy": {
+    "enabled": true
+  },
+  "carrier": {
+    "enabled": true
   }
 }
