@@ -85,6 +85,7 @@ public final class Main {
     }
 
     private static String readInput() throws Exception {
+        // Bootstrap 已消费 dex 长度头与 dex 本体，这里只读剩余请求 JSON。
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         byte[] buffer = new byte[4096];
         int size;

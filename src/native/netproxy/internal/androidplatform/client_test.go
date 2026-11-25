@@ -1,6 +1,7 @@
 package androidplatform
 
 import (
+	"encoding/binary"
 	"errors"
 	"testing"
 
@@ -37,5 +38,20 @@ func TestDecodeResponsePreservesPlatformContracts(t *testing.T) {
 	data, err := decodeResponse([]byte(`{"schema":1,"ok":true,"code":"android.apps","data":{"users":[]}}`), nil)
 	if err != nil || string(data) != `{"users":[]}` {
 		t.Fatal(string(data), err)
+	}
+}
+
+func TestFramePrefixesDexAndKeepsRequestIntact(t *testing.T) {
+	dex := []byte{0x64, 0x65, 0x78, 0x0a}
+	request := []byte(`{"operation":"provision"}`)
+	frame := Frame(dex, request)
+	if len(frame) != 4+len(dex)+len(request) {
+		t.Fatalf("frame length %d", len(frame))
+	}
+	if size := binary.BigEndian.Uint32(frame[:4]); int(size) != len(dex) {
+		t.Fatalf("dex size prefix %d", size)
+	}
+	if string(frame[4:4+len(dex)]) != string(dex) || string(frame[4+len(dex):]) != string(request) {
+		t.Fatal("frame payload mismatch")
 	}
 }

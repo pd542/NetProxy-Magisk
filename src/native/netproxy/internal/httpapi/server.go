@@ -70,7 +70,8 @@ func New(options moduleapp.Options, config apiconfig.Config) (*Server, error) {
 	}
 	s := &Server{options: options, config: config, mux: http.NewServeMux(),
 		instance: hex.EncodeToString(identity[:]), expensive: make(chan struct{}, 4), writeSlots: make(chan struct{}, 8),
-		platform: androidplatform.Client{DEX: paths.New(options.ModuleDir).AndroidPlatformDEX()}, appSlots: make(chan struct{}, 1)}
+		platform: androidplatform.Client{DEX: paths.New(options.ModuleDir).AndroidPlatformDEX(),
+			Bootstrap: paths.New(options.ModuleDir).AndroidBootstrapDEX()}, appSlots: make(chan struct{}, 1)}
 	s.lifetime, s.stopEvents = context.WithCancel(context.Background())
 	s.options.TransferContext = s.lifetime
 	s.version, s.versionCode = readModuleVersion(paths.New(options.ModuleDir).ModuleProp())

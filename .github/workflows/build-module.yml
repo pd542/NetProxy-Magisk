@@ -88,6 +88,7 @@ jobs:
             dist/NetProxy-unsigned.apk
             src/module/NetProxy.apk
             src/android/platform/build/dex/classes.dex
+            src/android/platform/build/bootstrap-dex/classes.dex
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
@@ -122,9 +123,11 @@ jobs:
       - name: 完成唯一模块包
         run: |
           set -euo pipefail
-          if [ -s manager/src/module/NetProxy.apk ] && [ -s manager/src/android/platform/build/dex/classes.dex ]; then
+          main_dex=manager/src/android/platform/build/dex/classes.dex
+          boot_dex=manager/src/android/platform/build/bootstrap-dex/classes.dex
+          if [ -s manager/src/module/NetProxy.apk ] && [ -s "$main_dex" ] && [ -s "$boot_dex" ]; then
             sh .github/scripts/complete-module.sh "$MODULE_NAME" \
-              manager/src/module/NetProxy.apk manager/src/android/platform/build/dex/classes.dex
+              manager/src/module/NetProxy.apk "$main_dex" "$boot_dex"
           else
             echo "管理器产物缺失，仅保留模块内容（不含管理器 APK）"
           fi

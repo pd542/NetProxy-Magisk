@@ -63,6 +63,9 @@ func (l Layout) APITempDir() string { return filepath.Join(l.DevRoot(), "http") 
 
 func (l Layout) AndroidPlatformDEX() string { return filepath.Join(l.Bin(), "android-platform.dex") }
 
+// AndroidBootstrapDEX 返回引导 dex 路径，需由 -Xbootclasspath 附加。
+func (l Layout) AndroidBootstrapDEX() string { return filepath.Join(l.Bin(), "android-bootstrap.dex") }
+
 func (l Layout) AndroidIcons() string { return filepath.Join(l.Data(), "cache", "android-icons") }
 
 // InboundConfig 返回受管入站配置文件路径。
